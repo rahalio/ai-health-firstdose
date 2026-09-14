@@ -1,0 +1,2280 @@
+openapi: 3.0.3
+info:
+  title: Firstdose
+  version: 0.1.0
+  description: >-
+    Multi-party case system for manufacturer-sponsored specialty patient support. Every
+    barrier between prescription and sustained therapy becomes a typed work item with an
+    owner and a clock, routed across hub, specialty pharmacy, payer, prescriber office and
+    nurse educator through a structured service exchange. Patient authorisation is
+    re-evaluated at every external exchange, adverse-event capture blocks contact closure,
+    and only aggregate segment views cross the commercial firewall.
+  x-product-slug: ai-health-firstdose
+  x-source: ai-in-health/Accenture-Intelligent-Patient-Platform-Video-Transcript/
+servers:
+  - url: https://api.example.com
+tags:
+  - name: Cases
+    description: Patient case enrolment, status, and target first-dose date
+  - name: Authorisation
+    description: Scoped, revocable patient authorisation evaluated per exchange
+  - name: Barriers
+    description: Typed blockers with owners, clocks, and recorded resolutions
+  - name: Exchange
+    description: Structured work routing to and from external parties
+  - name: Access
+    description: Benefits verification, prior authorisation, appeals, and assistance
+  - name: Initiation
+    description: REMS prerequisites, specialty pharmacy triage, shipment, and training
+  - name: Adherence
+    description: Refill lapse, missed dose, and dosing gap operations
+  - name: Safety
+    description: Adverse event capture, routing clocks, and contact closure control
+  - name: Boundaries
+    description: Non-clinical scope escalation and commercial firewall events
+  - name: Outcomes
+    description: De-identified population cohorts under data-use agreements
+  - name: Reporting
+    description: Time to first dose, persistence, abandonment, and cost to serve
+paths:
+  /v1/cases:
+    get:
+      operationId: listPatientCases
+      summary: List patient cases by stage, payer, or abandonment risk
+      tags: [Cases]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: stage
+          in: query
+          schema:
+            type: string
+            enum:
+              [
+                enrolled,
+                benefits_pending,
+                coverage_pending,
+                assistance_pending,
+                initiation_pending,
+                on_therapy,
+                lapsed,
+                abandoned,
+                discontinued,
+              ]
+        - name: payerId
+          in: query
+          schema:
+            type: string
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [abandonment_risk, days_since_enrolment, target_first_dose_date]
+            default: abandonment_risk
+      responses:
+        "200":
+          description: Patient cases page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopePatientCase"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: enrolPatientCase
+      summary: Enrol a patient and open a case with a target first-dose date
+      tags: [Cases]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatientCaseCreate"
+      responses:
+        "201":
+          description: Case opened, pending authorisation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopePatientCase"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/cases/{caseId}:
+    parameters:
+      - $ref: "#/components/parameters/CaseId"
+    get:
+      operationId: getPatientCase
+      summary: Get a case with open barriers and elapsed clocks
+      tags: [Cases]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Patient case
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopePatientCase"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/cases/{caseId}/authorisation:
+    parameters:
+      - $ref: "#/components/parameters/CaseId"
+    get:
+      operationId: getAuthorisation
+      summary: Get the patient authorisation scope currently in force
+      tags: [Authorisation]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Authorisation in force
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeAuthorisation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: setAuthorisation
+      summary: Capture or amend a scoped, evidenced patient authorisation
+      tags: [Authorisation]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthorisationUpsert"
+      responses:
+        "200":
+          description: Authorisation recorded as a new version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeAuthorisation"
+  /v1/cases/{caseId}/authorisation/revocation:
+    parameters:
+      - $ref: "#/components/parameters/CaseId"
+    post:
+      operationId: revokeAuthorisation
+      summary: Revoke authorisation and halt sharing without severing therapy support
+      tags: [Authorisation]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [revokedBy]
+              properties:
+                revokedBy:
+                  type: string
+                  enum: [patient, caregiver, legal_representative]
+                scopesRevoked:
+                  type: array
+                  items:
+                    type: string
+                continueTherapySupport:
+                  type: boolean
+                  default: true
+                statedReason:
+                  type: string
+      responses:
+        "202":
+          description: Revocation applied and external exchanges halted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeAuthorisation"
+  /v1/barriers:
+    get:
+      operationId: listBarriers
+      summary: List open barriers by type, owning party, and clock state
+      tags: [Barriers]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: caseId
+          in: query
+          schema:
+            type: string
+        - name: barrierType
+          in: query
+          schema:
+            $ref: "#/components/schemas/BarrierType"
+        - name: ownerPartyType
+          in: query
+          schema:
+            $ref: "#/components/schemas/PartyType"
+        - name: overdueOnly
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Barriers page ordered by abandonment contribution
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeBarrier"
+  /v1/barriers/{barrierId}/assignment:
+    parameters:
+      - $ref: "#/components/parameters/BarrierId"
+    post:
+      operationId: assignBarrierOwner
+      summary: Assign a barrier to the party that can clear it, with its clock
+      tags: [Barriers]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ownerPartyType, ownerPartyId]
+              properties:
+                ownerPartyType:
+                  $ref: "#/components/schemas/PartyType"
+                ownerPartyId:
+                  type: string
+                dueAt:
+                  type: string
+                  format: date-time
+                clockSource:
+                  type: string
+                  enum:
+                    [
+                      payer_turnaround_rule,
+                      clinical_window,
+                      vendor_sla,
+                      statutory_deadline,
+                      programme_target,
+                    ]
+      responses:
+        "200":
+          description: Barrier assigned with clock started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeBarrier"
+  /v1/barriers/{barrierId}/resolution:
+    parameters:
+      - $ref: "#/components/parameters/BarrierId"
+    post:
+      operationId: resolveBarrier
+      summary: Record the resolution of a barrier and recompute case stage
+      tags: [Barriers]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome:
+                  type: string
+                  enum: [cleared, cleared_with_workaround, superseded, unresolvable]
+                resolutionNote:
+                  type: string
+                resolvedBy:
+                  type: string
+      responses:
+        "200":
+          description: Barrier resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeBarrier"
+  /v1/exchange/partners:
+    get:
+      operationId: listExchangePartners
+      summary: List external parties and the channels each supports
+      tags: [Exchange]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: partyType
+          in: query
+          schema:
+            $ref: "#/components/schemas/PartyType"
+      responses:
+        "200":
+          description: Exchange partners page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeExchangePartner"
+  /v1/exchange/work-items:
+    post:
+      operationId: dispatchWorkItem
+      summary: Dispatch a work item to an external party in a channel they support
+      tags: [Exchange]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkItemCreate"
+      responses:
+        "201":
+          description: Work item dispatched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeWorkItem"
+        "403":
+          description: Authorisation scope does not permit disclosure to this party
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/exchange/work-items/{workItemId}/return:
+    parameters:
+      - $ref: "#/components/parameters/WorkItemId"
+    post:
+      operationId: returnWorkItem
+      summary: Return a completed or blocked work item from an external party
+      tags: [Exchange]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [completed, blocked, rejected, needs_information]
+                missingFields:
+                  type: array
+                  items:
+                    type: string
+                  description: Names the exact field so triage does not loop by fax
+                payload:
+                  type: object
+                  additionalProperties: true
+                returnedBy:
+                  type: string
+      responses:
+        "200":
+          description: Work item returned and barrier state recomputed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeWorkItem"
+        "403":
+          description: Authorisation revoked since dispatch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/cases/{caseId}/benefits-verification:
+    parameters:
+      - $ref: "#/components/parameters/CaseId"
+    post:
+      operationId: recordBenefitsVerification
+      summary: Record benefit design, coverage pathway, and patient responsibility
+      tags: [Access]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BenefitsVerificationCreate"
+      responses:
+        "201":
+          description: Verification recorded and downstream barriers derived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeBenefitsVerification"
+  /v1/cases/{caseId}/prior-authorisations:
+    parameters:
+      - $ref: "#/components/parameters/CaseId"
+    post:
+      operationId: submitPriorAuthorisation
+      summary: Submit a prior authorisation against the payer's published criteria
+      tags: [Access]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PriorAuthorisationCreate"
+      responses:
+        "201":
+          description: Prior authorisation submitted with payer turnaround clock
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopePriorAuthorisation"
+  /v1/prior-authorisations/{priorAuthId}/appeal:
+    parameters:
+      - $ref: "#/components/parameters/PriorAuthId"
+    post:
+      operationId: fileAppeal
+      summary: File an appeal with denial reason and payer criteria attached
+      tags: [Access]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppealCreate"
+      responses:
+        "201":
+          description: Appeal filed with its statutory window
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeAppeal"
+        "409":
+          description: Appeal window already closed for this denial
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/cases/{caseId}/assistance-eligibility:
+    parameters:
+      - $ref: "#/components/parameters/CaseId"
+    post:
+      operationId: determineAssistanceEligibility
+      summary: Determine financial assistance eligibility by published rule
+      description: >-
+        Government-insured patients are excluded by rule where required. Any override
+        must carry a logged, approved exception rather than agent discretion.
+      tags: [Access]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistanceEligibilityRequest"
+      responses:
+        "201":
+          description: Eligibility determined with the rule version applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeAssistanceEligibility"
+        "409":
+          description: Patient excluded by rule and no approved exception supplied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/cases/{caseId}/rems-enrolment:
+    parameters:
+      - $ref: "#/components/parameters/CaseId"
+    post:
+      operationId: recordRemsEnrolment
+      summary: Record REMS and certification prerequisites before dispensing
+      tags: [Initiation]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemsEnrolmentCreate"
+      responses:
+        "201":
+          description: REMS state recorded and dispensing gate updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeRemsEnrolment"
+  /v1/cases/{caseId}/triage:
+    parameters:
+      - $ref: "#/components/parameters/CaseId"
+    post:
+      operationId: recordSpecialtyPharmacyTriage
+      summary: Record specialty pharmacy triage state and any precisely named blocker
+      tags: [Initiation]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpecialtyPharmacyTriageCreate"
+      responses:
+        "201":
+          description: Triage recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeSpecialtyPharmacyTriage"
+        "409":
+          description: REMS or certification prerequisite outstanding
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/cases/{caseId}/shipments:
+    parameters:
+      - $ref: "#/components/parameters/CaseId"
+    post:
+      operationId: recordShipment
+      summary: Record a therapy shipment and its delivery state
+      tags: [Initiation]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShipmentCreate"
+      responses:
+        "201":
+          description: Shipment recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeShipment"
+  /v1/cases/{caseId}/training-visits:
+    parameters:
+      - $ref: "#/components/parameters/CaseId"
+    post:
+      operationId: scheduleTrainingVisit
+      summary: Schedule a nurse educator injection or administration training visit
+      tags: [Initiation]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrainingVisitCreate"
+      responses:
+        "201":
+          description: Visit scheduled inside the documented non-clinical scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeTrainingVisit"
+  /v1/cases/{caseId}/first-dose:
+    parameters:
+      - $ref: "#/components/parameters/CaseId"
+    post:
+      operationId: recordFirstDose
+      summary: Record first dose and stop the time-to-therapy clock
+      tags: [Initiation]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [administeredAt, source]
+              properties:
+                administeredAt:
+                  type: string
+                  format: date-time
+                source:
+                  type: string
+                  enum: [specialty_pharmacy_dispense, patient_reported, device_telemetry, nurse_educator]
+      responses:
+        "200":
+          description: First dose recorded, case moved to on-therapy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopePatientCase"
+  /v1/adherence-events:
+    get:
+      operationId: listAdherenceEvents
+      summary: List refill lapses, missed doses, and dosing gaps as clocked items
+      tags: [Adherence]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: caseId
+          in: query
+          schema:
+            type: string
+        - name: eventType
+          in: query
+          schema:
+            type: string
+            enum: [refill_lapse, missed_dose, dosing_gap, device_inactive, discontinuation_signal]
+      responses:
+        "200":
+          description: Adherence events page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeAdherenceEvent"
+    post:
+      operationId: reportAdherenceEvent
+      summary: Report an adherence event from dispense data, device, or patient report
+      tags: [Adherence]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdherenceEventCreate"
+      responses:
+        "201":
+          description: Event recorded and a clocked work item raised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeAdherenceEvent"
+  /v1/cases/{caseId}/contacts:
+    parameters:
+      - $ref: "#/components/parameters/CaseId"
+    post:
+      operationId: recordPatientContact
+      summary: Open a patient or caregiver contact with its outstanding duties
+      tags: [Safety]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatientContactCreate"
+      responses:
+        "201":
+          description: Contact opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopePatientContact"
+  /v1/contacts/{contactId}/close:
+    parameters:
+      - $ref: "#/components/parameters/ContactId"
+    post:
+      operationId: closePatientContact
+      summary: Close a contact once adverse-event routing is confirmed
+      tags: [Safety]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [adverseEventMentioned]
+              properties:
+                adverseEventMentioned:
+                  type: boolean
+                productComplaintMentioned:
+                  type: boolean
+                summary:
+                  type: string
+      responses:
+        "200":
+          description: Contact closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopePatientContact"
+        "409":
+          description: Adverse event captured but routing to safety unconfirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/safety/adverse-event-reports:
+    post:
+      operationId: captureAdverseEventReport
+      summary: Capture an adverse event or product complaint and start the routing clock
+      tags: [Safety]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdverseEventReportCreate"
+      responses:
+        "201":
+          description: Report captured with a 24-hour clock on serious cases
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeAdverseEventReport"
+  /v1/scope-escalations:
+    post:
+      operationId: escalateOutOfScopeRequest
+      summary: Refuse an out-of-scope clinical request and route it to the prescriber
+      tags: [Boundaries]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScopeEscalationCreate"
+      responses:
+        "201":
+          description: Request refused by programme staff and escalated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeScopeEscalation"
+  /v1/boundaries/firewall-events:
+    get:
+      operationId: listFirewallEvents
+      summary: List blocked commercial access attempts to patient-level data
+      tags: [Boundaries]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: requesterRole
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Firewall events page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeFirewallEvent"
+  /v1/outcomes/cohorts:
+    get:
+      operationId: listPopulationOutcomeCohorts
+      summary: List de-identified population cohorts shared with payer partners
+      tags: [Outcomes]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: payerPartnerId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Population outcome cohorts page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopePopulationOutcomeCohort"
+    post:
+      operationId: publishPopulationOutcomeCohort
+      summary: Publish a de-identified cohort outcome under an active data-use agreement
+      tags: [Outcomes]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PopulationOutcomeCohortCreate"
+      responses:
+        "201":
+          description: Cohort published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopePopulationOutcomeCohort"
+        "409":
+          description: No active data-use agreement, or cohort below re-identification threshold
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/reports/programme-performance:
+    get:
+      operationId: getProgrammePerformance
+      summary: Get time to first dose, persistence, abandonment, and cost to serve
+      tags: [Reporting]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            example: 2026-Q3
+        - name: payerId
+          in: query
+          schema:
+            type: string
+        - name: barrierType
+          in: query
+          schema:
+            $ref: "#/components/schemas/BarrierType"
+      responses:
+        "200":
+          description: Programme performance metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeProgrammePerformanceMetric"
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    CaseId:
+      name: caseId
+      in: path
+      required: true
+      schema:
+        type: string
+    BarrierId:
+      name: barrierId
+      in: path
+      required: true
+      schema:
+        type: string
+    WorkItemId:
+      name: workItemId
+      in: path
+      required: true
+      schema:
+        type: string
+    PriorAuthId:
+      name: priorAuthId
+      in: path
+      required: true
+      schema:
+        type: string
+    ContactId:
+      name: contactId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnprocessableEntity:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    ResponseMeta:
+      type: object
+      required: [requestId, timestamp]
+      properties:
+        requestId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        barrierType:
+          $ref: "#/components/schemas/BarrierType"
+        authorisationScopeMissing:
+          type: string
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: number
+          format: double
+        currency:
+          type: string
+          example: USD
+    PartyType:
+      type: string
+      enum:
+        [
+          hub,
+          specialty_pharmacy,
+          prescriber_office,
+          payer,
+          assistance_administrator,
+          nurse_educator,
+          field_reimbursement,
+          patient,
+        ]
+    BarrierType:
+      type: string
+      enum:
+        [
+          benefits_unverified,
+          prior_authorisation_pending,
+          prior_authorisation_denied,
+          appeal_window_open,
+          assistance_not_applied,
+          assistance_funds_exhausted,
+          rems_enrolment_outstanding,
+          triage_stalled_missing_field,
+          prescription_incomplete,
+          shipment_undelivered,
+          training_unscheduled,
+          refill_lapsed,
+          patient_unreachable,
+        ]
+    Patient:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+        ageBand:
+          type: string
+        primaryLanguage:
+          type: string
+        insuranceType:
+          type: string
+          enum: [commercial, medicare, medicaid, tricare, dual_eligible, uninsured]
+        governmentInsured:
+          type: boolean
+          description: Drives statutory exclusion from manufacturer copay assistance
+        caregiverOnFile:
+          type: boolean
+    PatientCase:
+      type: object
+      required: [id, patientId, stage, enrolledAt]
+      properties:
+        id:
+          type: string
+        patientId:
+          type: string
+        brandId:
+          type: string
+        therapyName:
+          type: string
+        stage:
+          type: string
+          enum:
+            [
+              enrolled,
+              benefits_pending,
+              coverage_pending,
+              assistance_pending,
+              initiation_pending,
+              on_therapy,
+              lapsed,
+              abandoned,
+              discontinued,
+            ]
+        enrolmentSource:
+          type: string
+          enum: [e_prescribing, enrolment_form, prescriber_office, specialty_pharmacy, patient_self]
+        prescriberId:
+          type: string
+        payerId:
+          type: string
+        specialtyPharmacyId:
+          type: string
+        enrolledAt:
+          type: string
+          format: date-time
+        targetFirstDoseDate:
+          type: string
+          format: date
+        firstDoseAt:
+          type: string
+          format: date-time
+        daysToFirstDose:
+          type: integer
+        abandonmentRiskScore:
+          type: number
+          format: float
+        openBarrierIds:
+          type: array
+          items:
+            type: string
+        authorisationId:
+          type: string
+    PatientCaseCreate:
+      type: object
+      required: [patientId, brandId, prescriberId]
+      properties:
+        patientId:
+          type: string
+        brandId:
+          type: string
+        therapyName:
+          type: string
+        prescriberId:
+          type: string
+        payerId:
+          type: string
+        enrolmentSource:
+          type: string
+        targetFirstDoseDate:
+          type: string
+          format: date
+    Authorisation:
+      type: object
+      required: [id, caseId, version, status, scopes]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        version:
+          type: integer
+        status:
+          type: string
+          enum: [pending, active, partially_revoked, revoked, expired]
+        scopes:
+          type: array
+          items:
+            type: object
+            required: [scope, permitted]
+            properties:
+              scope:
+                type: string
+                enum:
+                  [
+                    obtain_benefits_information,
+                    disclose_to_specialty_pharmacy,
+                    disclose_to_payer,
+                    disclose_to_prescriber,
+                    disclose_to_assistance_administrator,
+                    contact_by_phone,
+                    contact_by_text,
+                    device_data_collection,
+                    de_identified_outcomes_research,
+                  ]
+              permitted:
+                type: boolean
+        capturedBy:
+          type: string
+        captureEvidenceRef:
+          type: string
+        signedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date
+        revokedAt:
+          type: string
+          format: date-time
+        therapySupportContinues:
+          type: boolean
+    AuthorisationUpsert:
+      type: object
+      required: [scopes, captureEvidenceRef]
+      properties:
+        scopes:
+          type: array
+          items:
+            type: object
+            required: [scope, permitted]
+            properties:
+              scope:
+                type: string
+              permitted:
+                type: boolean
+        capturedBy:
+          type: string
+        captureEvidenceRef:
+          type: string
+        expiresAt:
+          type: string
+          format: date
+    Barrier:
+      type: object
+      required: [id, caseId, barrierType, status]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        barrierType:
+          $ref: "#/components/schemas/BarrierType"
+        status:
+          type: string
+          enum: [open, assigned, in_progress, overdue, resolved, unresolvable]
+        ownerPartyType:
+          $ref: "#/components/schemas/PartyType"
+        ownerPartyId:
+          type: string
+        detectedAt:
+          type: string
+          format: date-time
+        dueAt:
+          type: string
+          format: date-time
+        clockSource:
+          type: string
+          enum:
+            [payer_turnaround_rule, clinical_window, vendor_sla, statutory_deadline, programme_target]
+        ageDays:
+          type: integer
+        abandonmentContribution:
+          type: number
+          format: float
+          description: Modelled contribution of this barrier type to abandonment
+        resolutionOutcome:
+          type: string
+          enum: [cleared, cleared_with_workaround, superseded, unresolvable]
+        resolvedAt:
+          type: string
+          format: date-time
+    ExchangePartner:
+      type: object
+      required: [id, partyType, name, channels]
+      properties:
+        id:
+          type: string
+        partyType:
+          $ref: "#/components/schemas/PartyType"
+        name:
+          type: string
+        channels:
+          type: array
+          items:
+            type: string
+            enum: [api, edi, secure_portal, secure_email, fax, phone]
+        slaHours:
+          type: integer
+        electronicCapable:
+          type: boolean
+        activeParticipant:
+          type: boolean
+    WorkItemCreate:
+      type: object
+      required: [barrierId, partnerId, requestType]
+      properties:
+        barrierId:
+          type: string
+        partnerId:
+          type: string
+        requestType:
+          type: string
+          enum:
+            [
+              verify_benefits,
+              submit_prior_authorisation,
+              provide_clinical_documentation,
+              clarify_prescription_field,
+              apply_assistance,
+              confirm_rems,
+              schedule_training,
+              confirm_shipment,
+            ]
+        payload:
+          type: object
+          additionalProperties: true
+        dueAt:
+          type: string
+          format: date-time
+    WorkItem:
+      type: object
+      required: [id, barrierId, partnerId, status, channel]
+      properties:
+        id:
+          type: string
+        barrierId:
+          type: string
+        caseId:
+          type: string
+        partnerId:
+          type: string
+        requestType:
+          type: string
+        channel:
+          type: string
+          enum: [api, edi, secure_portal, secure_email, fax, phone]
+        status:
+          type: string
+          enum: [dispatched, acknowledged, completed, blocked, rejected, needs_information]
+        missingFields:
+          type: array
+          items:
+            type: string
+        authorisationVersionAtDispatch:
+          type: integer
+        dispatchedAt:
+          type: string
+          format: date-time
+        dueAt:
+          type: string
+          format: date-time
+        returnedAt:
+          type: string
+          format: date-time
+    PatientContact:
+      type: object
+      required: [id, caseId, channel, state]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        contactType:
+          type: string
+          enum: [inbound_call, outbound_call, portal_message, training_visit, text_exchange]
+        channel:
+          type: string
+        staffId:
+          type: string
+        staffRole:
+          type: string
+          enum: [hub_case_manager, nurse_educator, field_reimbursement_manager, patient_self_service]
+        state:
+          type: string
+          enum: [open, blocked_on_duties, closed]
+        outstandingDuties:
+          type: array
+          items:
+            type: string
+            enum: [adverse_event_routing, product_complaint_routing, scope_escalation, contact_summary]
+        occurredAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+    PatientContactCreate:
+      type: object
+      required: [contactType, occurredAt]
+      properties:
+        contactType:
+          type: string
+        channel:
+          type: string
+        staffId:
+          type: string
+        staffRole:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+    BenefitsVerification:
+      type: object
+      required: [id, caseId, verifiedAt]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        payerId:
+          type: string
+        planName:
+          type: string
+        benefitType:
+          type: string
+          enum: [pharmacy_benefit, medical_benefit, both, none]
+        priorAuthorisationRequired:
+          type: boolean
+        stepTherapyRequired:
+          type: boolean
+        specialtyPharmacyRestricted:
+          type: boolean
+        patientResponsibility:
+          $ref: "#/components/schemas/Money"
+        deductibleRemaining:
+          $ref: "#/components/schemas/Money"
+        verifiedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+          enum: [electronic_eligibility, payer_portal, phone_verification, pharmacy_test_claim]
+    BenefitsVerificationCreate:
+      type: object
+      required: [payerId, benefitType, verifiedAt]
+      properties:
+        payerId:
+          type: string
+        planName:
+          type: string
+        benefitType:
+          type: string
+        priorAuthorisationRequired:
+          type: boolean
+        stepTherapyRequired:
+          type: boolean
+        specialtyPharmacyRestricted:
+          type: boolean
+        patientResponsibility:
+          $ref: "#/components/schemas/Money"
+        verifiedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+    PriorAuthorisationCreate:
+      type: object
+      required: [payerId, criteriaVersion, submittedBy]
+      properties:
+        payerId:
+          type: string
+        criteriaVersion:
+          type: string
+        clinicalDocumentationRefs:
+          type: array
+          items:
+            type: string
+        submittedBy:
+          type: string
+        channel:
+          type: string
+          enum: [electronic_prior_auth, payer_portal, fax, phone]
+    PriorAuthorisation:
+      type: object
+      required: [id, caseId, payerId, status, submittedAt]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        payerId:
+          type: string
+        criteriaVersion:
+          type: string
+        status:
+          type: string
+          enum: [submitted, pending, approved, denied, withdrawn, expired]
+        denialReasonCode:
+          type: string
+          enum:
+            [
+              not_medically_necessary,
+              step_therapy_not_met,
+              documentation_incomplete,
+              non_formulary,
+              site_of_care,
+              quantity_limit,
+            ]
+        channel:
+          type: string
+        payerTurnaroundDays:
+          type: integer
+        submittedAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: string
+          format: date-time
+        elapsedDays:
+          type: integer
+        firstPass:
+          type: boolean
+    AppealCreate:
+      type: object
+      required: [level, filedBy]
+      properties:
+        level:
+          type: string
+          enum: [first_level, second_level, external_review, expedited]
+        filedBy:
+          type: string
+        supportingEvidenceRefs:
+          type: array
+          items:
+            type: string
+        peerToPeerRequested:
+          type: boolean
+    Appeal:
+      type: object
+      required: [id, priorAuthorisationId, level, status]
+      properties:
+        id:
+          type: string
+        priorAuthorisationId:
+          type: string
+        caseId:
+          type: string
+        level:
+          type: string
+          enum: [first_level, second_level, external_review, expedited]
+        status:
+          type: string
+          enum: [filed, pending, overturned, upheld, withdrawn, window_expired]
+        denialReasonCode:
+          type: string
+        payerCriteriaAttached:
+          type: boolean
+        windowClosesAt:
+          type: string
+          format: date-time
+        filedAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: string
+          format: date-time
+        peerToPeerHeld:
+          type: boolean
+    AssistanceEligibilityRequest:
+      type: object
+      required: [programmeType]
+      properties:
+        programmeType:
+          type: string
+          enum: [copay_card, patient_assistance_programme, foundation_grant, free_goods, bridge_supply]
+        householdIncomeBand:
+          type: string
+        exceptionApprovalRef:
+          type: string
+          description: Required when overriding a rule-based exclusion
+    AssistanceEligibility:
+      type: object
+      required: [id, caseId, programmeType, outcome, ruleVersion]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        programmeType:
+          type: string
+        outcome:
+          type: string
+          enum: [eligible, ineligible_government_insured, ineligible_income, ineligible_other, exception_granted]
+        ruleVersion:
+          type: string
+        ruleCitation:
+          type: string
+        awardAmount:
+          $ref: "#/components/schemas/Money"
+        fundsExhausted:
+          type: boolean
+        exceptionApprovalRef:
+          type: string
+        exceptionApprovedBy:
+          type: string
+        determinedAt:
+          type: string
+          format: date-time
+        auditRetainedUntil:
+          type: string
+          format: date
+    RemsEnrolmentCreate:
+      type: object
+      required: [programmeName, status]
+      properties:
+        programmeName:
+          type: string
+        status:
+          type: string
+          enum: [not_started, patient_enrolled, prescriber_certified, pharmacy_certified, complete, lapsed]
+        completedAt:
+          type: string
+          format: date-time
+    RemsEnrolment:
+      type: object
+      required: [id, caseId, programmeName, status]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        programmeName:
+          type: string
+        status:
+          type: string
+          enum: [not_started, patient_enrolled, prescriber_certified, pharmacy_certified, complete, lapsed]
+        dispensingPermitted:
+          type: boolean
+        outstandingPrerequisites:
+          type: array
+          items:
+            type: string
+        completedAt:
+          type: string
+          format: date-time
+    SpecialtyPharmacyTriageCreate:
+      type: object
+      required: [specialtyPharmacyId, status]
+      properties:
+        specialtyPharmacyId:
+          type: string
+        status:
+          type: string
+          enum: [received, in_triage, stalled, ready_to_fill, transferred, rejected]
+        missingFields:
+          type: array
+          items:
+            type: string
+        note:
+          type: string
+    SpecialtyPharmacyTriage:
+      type: object
+      required: [id, caseId, specialtyPharmacyId, status]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        specialtyPharmacyId:
+          type: string
+        status:
+          type: string
+          enum: [received, in_triage, stalled, ready_to_fill, transferred, rejected]
+        missingFields:
+          type: array
+          items:
+            type: string
+          description: Named precisely so clarification does not loop by fax
+        stalledSince:
+          type: string
+          format: date-time
+        transferredToPharmacyId:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    ShipmentCreate:
+      type: object
+      required: [dispatchedAt]
+      properties:
+        carrierReference:
+          type: string
+        dispatchedAt:
+          type: string
+          format: date-time
+        expectedDeliveryAt:
+          type: string
+          format: date-time
+        coldChain:
+          type: boolean
+    Shipment:
+      type: object
+      required: [id, caseId, status]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        carrierReference:
+          type: string
+        status:
+          type: string
+          enum: [dispatched, in_transit, delivered, failed, returned, reshipped]
+        coldChain:
+          type: boolean
+        coldChainExcursion:
+          type: boolean
+        dispatchedAt:
+          type: string
+          format: date-time
+        deliveredAt:
+          type: string
+          format: date-time
+    TrainingVisitCreate:
+      type: object
+      required: [scheduledFor, modality]
+      properties:
+        scheduledFor:
+          type: string
+          format: date-time
+        modality:
+          type: string
+          enum: [in_home, virtual, pharmacy_site, prescriber_office]
+        nurseEducatorId:
+          type: string
+        trainingTopic:
+          type: string
+          enum: [injection_technique, device_handling, storage_and_disposal, dosing_schedule]
+    TrainingVisit:
+      type: object
+      required: [id, caseId, status, modality]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        nurseEducatorId:
+          type: string
+        modality:
+          type: string
+        trainingTopic:
+          type: string
+        status:
+          type: string
+          enum: [scheduled, completed, no_show, cancelled, escalated]
+        scopeBoundaryRespected:
+          type: boolean
+        scheduledFor:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+    AdherenceEventCreate:
+      type: object
+      required: [caseId, eventType, detectedAt]
+      properties:
+        caseId:
+          type: string
+        eventType:
+          type: string
+          enum: [refill_lapse, missed_dose, dosing_gap, device_inactive, discontinuation_signal]
+        detectedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+          enum: [dispense_feed, device_telemetry, adherence_app, patient_reported, nurse_educator]
+        gapDays:
+          type: integer
+    AdherenceEvent:
+      type: object
+      required: [id, caseId, eventType, detectedAt, status]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        eventType:
+          type: string
+        source:
+          type: string
+        gapDays:
+          type: integer
+        clinicalGapWindowDays:
+          type: integer
+          description: Window beyond which the therapy gap becomes clinically meaningful
+        detectedAt:
+          type: string
+          format: date-time
+        resolveBy:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [open, contacted, resolved, escalated, discontinued]
+        raisedBarrierId:
+          type: string
+    AdverseEventReportCreate:
+      type: object
+      required: [contactId, narrative, reporterType]
+      properties:
+        contactId:
+          type: string
+        narrative:
+          type: string
+        reporterType:
+          type: string
+          enum: [patient, caregiver, nurse_educator, prescriber_office, specialty_pharmacy]
+        seriousnessIndicated:
+          type: boolean
+        productComplaint:
+          type: boolean
+        suspectedProductId:
+          type: string
+    AdverseEventReport:
+      type: object
+      required: [id, contactId, routingState, routingDeadline]
+      properties:
+        id:
+          type: string
+        contactId:
+          type: string
+        caseId:
+          type: string
+        narrative:
+          type: string
+        reporterType:
+          type: string
+        seriousnessIndicated:
+          type: boolean
+        productComplaint:
+          type: boolean
+        routingState:
+          type: string
+          enum: [captured, routed, acknowledged_by_safety, failed]
+        routingDeadline:
+          type: string
+          format: date-time
+          description: 24 hours for serious cases
+        safetyCaseRef:
+          type: string
+        capturedAt:
+          type: string
+          format: date-time
+        routedAt:
+          type: string
+          format: date-time
+    ScopeEscalationCreate:
+      type: object
+      required: [caseId, requestSummary, refusedBy]
+      properties:
+        caseId:
+          type: string
+        contactId:
+          type: string
+        requestSummary:
+          type: string
+        requestCategory:
+          type: string
+          enum:
+            [
+              dose_change_advice,
+              symptom_interpretation,
+              alternative_therapy_advice,
+              diagnostic_question,
+              interaction_question,
+            ]
+        refusedBy:
+          type: string
+    ScopeEscalation:
+      type: object
+      required: [id, caseId, requestCategory, status]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        contactId:
+          type: string
+        requestSummary:
+          type: string
+        requestCategory:
+          type: string
+        refusedBy:
+          type: string
+        refusedByRole:
+          type: string
+          enum: [hub_case_manager, nurse_educator, field_reimbursement_manager]
+        escalatedToPrescriberId:
+          type: string
+        status:
+          type: string
+          enum: [refused_and_routed, prescriber_acknowledged, closed]
+        createdAt:
+          type: string
+          format: date-time
+    FirewallEvent:
+      type: object
+      required: [id, requesterId, blockedAt]
+      properties:
+        id:
+          type: string
+        requesterId:
+          type: string
+        requesterRole:
+          type: string
+          enum: [brand_marketer, sales_representative, commercial_analyst, market_access, unknown]
+        requestedResource:
+          type: string
+        requestedGranularity:
+          type: string
+          enum: [patient_level, case_level, aggregate_segment]
+        decision:
+          type: string
+          enum: [blocked, permitted_aggregate_only]
+        blockedAt:
+          type: string
+          format: date-time
+        retainedUntil:
+          type: string
+          format: date
+    DataUseAgreement:
+      type: object
+      required: [id, payerPartnerId, status, effectiveFrom]
+      properties:
+        id:
+          type: string
+        payerPartnerId:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, suspended, expired]
+        permittedMeasures:
+          type: array
+          items:
+            type: string
+        minimumCohortSize:
+          type: integer
+          description: Re-identification threshold below which no cohort may be published
+        reidentificationProhibited:
+          type: boolean
+          default: true
+        effectiveFrom:
+          type: string
+          format: date
+        expiresAt:
+          type: string
+          format: date
+        approvedBy:
+          type: string
+    PopulationOutcomeCohortCreate:
+      type: object
+      required: [payerPartnerId, dataUseAgreementId, measures, periodStart, periodEnd]
+      properties:
+        payerPartnerId:
+          type: string
+        dataUseAgreementId:
+          type: string
+        cohortDefinition:
+          type: string
+        measures:
+          type: array
+          items:
+            type: object
+            required: [measure, value]
+            properties:
+              measure:
+                type: string
+                enum:
+                  [
+                    time_to_first_dose_days,
+                    persistence_12_month_rate,
+                    abandonment_rate,
+                    total_cost_of_care,
+                    hospitalisation_rate,
+                    emergency_visit_rate,
+                  ]
+              value:
+                type: number
+                format: float
+        periodStart:
+          type: string
+          format: date
+        periodEnd:
+          type: string
+          format: date
+    PopulationOutcomeCohort:
+      type: object
+      required: [id, payerPartnerId, cohortSize, deIdentified]
+      properties:
+        id:
+          type: string
+        payerPartnerId:
+          type: string
+        dataUseAgreementId:
+          type: string
+        cohortDefinition:
+          type: string
+        cohortSize:
+          type: integer
+        deIdentified:
+          type: boolean
+          default: true
+        measures:
+          type: array
+          items:
+            type: object
+            properties:
+              measure:
+                type: string
+              value:
+                type: number
+                format: float
+              committedTarget:
+                type: number
+                format: float
+              targetMet:
+                type: boolean
+        periodStart:
+          type: string
+          format: date
+        periodEnd:
+          type: string
+          format: date
+        publishedAt:
+          type: string
+          format: date-time
+    ProgrammePerformanceMetric:
+      type: object
+      required: [period, medianDaysToFirstDose]
+      properties:
+        period:
+          type: string
+        brandId:
+          type: string
+        payerId:
+          type: string
+        enrolments:
+          type: integer
+        medianDaysToFirstDose:
+          type: number
+          format: float
+        daysToFirstDoseByBarrierType:
+          type: array
+          items:
+            type: object
+            properties:
+              barrierType:
+                $ref: "#/components/schemas/BarrierType"
+              medianContributionDays:
+                type: number
+                format: float
+              openCount:
+                type: integer
+              overdueCount:
+                type: integer
+        abandonmentBeforeFirstFillPct:
+          type: number
+          format: float
+        persistence6MonthPct:
+          type: number
+          format: float
+        persistence12MonthPct:
+          type: number
+          format: float
+        priorAuthFirstPassApprovalPct:
+          type: number
+          format: float
+        appealOverturnPct:
+          type: number
+          format: float
+        electronicExchangePct:
+          type: number
+          format: float
+        adverseEventsRoutedOnTimePct:
+          type: number
+          format: float
+        assistanceExceptionsLoggedPct:
+          type: number
+          format: float
+        costToServePerPatientSustained:
+          $ref: "#/components/schemas/Money"
+        targetFirstDoseDateMetPct:
+          type: number
+          format: float
+    DataEnvelopePatientCase:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/PatientCase"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopePatient:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Patient"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeAuthorisation:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Authorisation"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeBarrier:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Barrier"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeWorkItem:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/WorkItem"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopePatientContact:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/PatientContact"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeBenefitsVerification:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/BenefitsVerification"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopePriorAuthorisation:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/PriorAuthorisation"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeAppeal:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Appeal"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeAssistanceEligibility:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistanceEligibility"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeRemsEnrolment:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/RemsEnrolment"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeSpecialtyPharmacyTriage:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/SpecialtyPharmacyTriage"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeShipment:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Shipment"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeTrainingVisit:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/TrainingVisit"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeAdherenceEvent:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdherenceEvent"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeAdverseEventReport:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/AdverseEventReport"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeScopeEscalation:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/ScopeEscalation"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeDataUseAgreement:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/DataUseAgreement"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopePopulationOutcomeCohort:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/PopulationOutcomeCohort"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeProgrammePerformanceMetric:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/ProgrammePerformanceMetric"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopePatientCase:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/PatientCase"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeBarrier:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Barrier"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeExchangePartner:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/ExchangePartner"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeAdherenceEvent:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/AdherenceEvent"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeFirewallEvent:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/FirewallEvent"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopePopulationOutcomeCohort:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/PopulationOutcomeCohort"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
